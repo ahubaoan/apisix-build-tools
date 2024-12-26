@@ -21,7 +21,7 @@ if ([ $# -gt 0 ] && [ "$1" == "latest" ]) || [ "$version" == "latest" ]; then
 else
     ngx_multi_upstream_module_ver="1.2.0"
     mod_dubbo_ver="1.0.2"
-    apisix_nginx_module_ver="1.16.2"
+    apisix_nginx_module_ver="1.16.3"
     wasm_nginx_module_ver="0.7.0"
     lua_var_nginx_module_ver="v0.5.3"
     lua_resty_events_ver="0.2.0"
@@ -32,6 +32,9 @@ fi
 prev_workdir="$PWD"
 repo=$(basename "$prev_workdir")
 workdir=$(mktemp -d)
+echo "start run $0 ..."
+ls
+cp -r hotfix ${workdir}
 cd "$workdir" || exit 1
 
 wget --no-check-certificate https://openresty.org/download/openresty-${OPENRESTY_VERSION}.tar.gz
@@ -61,14 +64,6 @@ else
         apisix-nginx-module-${apisix_nginx_module_ver}
 fi
 
-if [ "$repo" == wasm-nginx-module ]; then
-    cp -r "$prev_workdir" ./wasm-nginx-module-${wasm_nginx_module_ver}
-else
-    git clone --depth=1 -b $wasm_nginx_module_ver \
-        https://github.com/api7/wasm-nginx-module.git \
-        wasm-nginx-module-${wasm_nginx_module_ver}
-fi
-
 if [ "$repo" == lua-var-nginx-module ]; then
     cp -r "$prev_workdir" ./lua-var-nginx-module-${lua_var_nginx_module_ver}
 else
@@ -93,9 +88,12 @@ cd apisix-nginx-module-${apisix_nginx_module_ver}/patch || exit 1
 ./patch.sh ../../openresty-${OPENRESTY_VERSION}
 cd ../..
 
-cd wasm-nginx-module-${wasm_nginx_module_ver} || exit 1
-./install-wasmtime.sh
+################## add zm patches ###################
+ls -l
+cd hotfix/
+./patch.sh ../openresty-${OPENRESTY_VERSION}
 cd ..
+####################################################
 
 cc_opt=${cc_opt:-}
 ld_opt=${ld_opt:-}
@@ -127,14 +125,13 @@ fi
 
 ./configure --prefix="$OR_PREFIX" \
     --with-cc-opt="-DAPISIX_BASE_VER=$version $cc_opt" \
-    --with-ld-opt="-Wl,-rpath,$OR_PREFIX/wasmtime-c-api/lib $ld_opt" \
+    --with-ld-opt="$ld_opt" \
     $debug_args \
     --add-module=../mod_dubbo-${mod_dubbo_ver} \
     --add-module=../ngx_multi_upstream_module-${ngx_multi_upstream_module_ver} \
     --add-module=../apisix-nginx-module-${apisix_nginx_module_ver} \
     --add-module=../apisix-nginx-module-${apisix_nginx_module_ver}/src/stream \
     --add-module=../apisix-nginx-module-${apisix_nginx_module_ver}/src/meta \
-    --add-module=../wasm-nginx-module-${wasm_nginx_module_ver} \
     --add-module=../lua-var-nginx-module-${lua_var_nginx_module_ver} \
     --add-module=../lua-resty-events-${lua_resty_events_ver} \
     --with-poll_module \
@@ -173,10 +170,6 @@ sudo make install
 cd ..
 
 cd apisix-nginx-module-${apisix_nginx_module_ver} || exit 1
-sudo OPENRESTY_PREFIX="$OR_PREFIX" make install
-cd ..
-
-cd wasm-nginx-module-${wasm_nginx_module_ver} || exit 1
 sudo OPENRESTY_PREFIX="$OR_PREFIX" make install
 cd ..
 
